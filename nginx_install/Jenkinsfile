@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+    options {
+        timeout (time: 10, unit: 'MINUTES')
+        retry (3)
+        timestamps ()
+    }
+    stages {
+        stage ('Refreshing packages') {
+        steps {
+            sh '''
+            echo "updating packages"
+            sudo yum update -y
+            '''
+            }
+        }
+
+        stage ('Installing nginx') {
+        steps {
+            sh '''
+            echo "installing nginx"
+            sudo yum install -y nginx
+            '''
+            }
+        }
+
+        stage ('enabling nginx') {
+        steps {
+            sh '''
+            echo "enabling nginx"
+            sudo systemctl enable nginx
+            '''
+            }
+        }
+
+        stage ('starting nginx') {
+        steps {
+            sh '''
+            echo "starting nginx"
+            sudo systemctl start nginx
+            '''
+            }
+        }
+        
+        stage ('Checking status of nginx') {
+            steps {
+                sh '''
+                echo "checking status of nginx"
+                sudo systemctl status nginx
+                '''
+            }
+
+        }
+             
+    }
+    post {
+        always {
+            echo "This pipeline is for installing nginx on a linux machine"
+        }
+        success {
+            echo "nginx has been installed successfully"
+        }
+        failure {
+            echo "nginx has not been installed successfully"
+        }
+    }
+
+}

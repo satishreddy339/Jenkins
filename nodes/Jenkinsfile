@@ -1,0 +1,58 @@
+pipeline {
+    agent {
+        label 'agent1'
+    }
+    options {
+        timeout (time: 10, unit: 'MINUTES')
+        retry (3)
+        timestamps ()
+    }
+
+    environment {
+        AWS_DEFAULT_REGION = 'ap-south-1'
+    }
+
+    stages {
+        stage ('installing AWS CLI') {
+            steps {
+                sh '''
+                echo "installing AWS CLI"
+                dnf install -y awscli
+                '''
+            }
+
+        }
+        stage ('Configuring AWS CLI with SA Creds') {
+            steps {
+                input message: 'proceed with AWS CLI configuration?', ok: 'Yes, proceed', cancel: 'No, cancel'
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY',
+                ]
+            ]) {
+                sh '''
+                echo "Configuring AWS CLI with SA Creds"
+                aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+                aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+                aws configure set default.region $AWS_DEFAULT_REGION
+                aws configure set default.output json
+                aws configure list
+                '''
+               }
+            }
+        }
+    }
+}
+post {
+    always {
+        cleanWs()
+    }
+    success {
+        echo "This pipeline is for installing awscli on a linux machine"
+    }
+    failure {
+        echo "awscli has not been installed successfully"
+    }
+}
