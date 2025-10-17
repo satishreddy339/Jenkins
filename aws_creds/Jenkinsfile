@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent (label 'agent1')
     options {
         timeout (time: 10, unit: 'MINUTES')
         retry (3)
@@ -19,6 +19,7 @@ pipeline {
         }
         stage ('Configuring AWS CLI with SA Creds') {
             steps {
+                input message: 'proceed with AWS CLI configuration?', ok: 'Yes, proceed', cancel: 'No, cancel'
                 withCredentials([
                     [$class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-creds',
