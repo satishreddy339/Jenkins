@@ -43,26 +43,12 @@ pipeline {
                     echo "Action: ${params.ACTION}"
                     echo "OS Type: ${params.OS_TYPE}"
                     echo "Auto Start: ${params.AUTO_START}"
-                    echo "Nginx Port: ${params.NGINX_PORT}"
                     echo "Target Node: ${params.TARGET_NODE}"
-                    echo "Custom Config: ${params.CUSTOM_CONFIG ? 'Provided' : 'Not provided'}"
                     echo "======================================"
                 }
             }
         }
         
-        stage('Validate Parameters') {
-            steps {
-                script {
-                    // Validate port number
-                    def port = params.NGINX_PORT.toInteger()
-                    if (port < 1 || port > 65535) {
-                        error("Invalid port number: ${port}. Must be between 1 and 65535")
-                    }
-                    echo "✓ Port validation passed: ${port}"
-                }
-            }
-        }
         
         stage('Install Nginx') {
             when {
@@ -209,7 +195,7 @@ pipeline {
                         
                         echo ""
                         echo "===== Testing HTTP Response ====="
-                        curl -I http://localhost:${NGINX_PORT} || echo "Warning: Could not connect to Nginx"
+                        curl -I http://localhost:80 || echo "Warning: Could not connect to Nginx"
                         
                         echo ""
                         echo "===== Nginx is listening on ====="
