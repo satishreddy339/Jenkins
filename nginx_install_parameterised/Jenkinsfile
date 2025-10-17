@@ -1,6 +1,6 @@
 pipeline {
     agent {
-        label '${TARGET_NODE}'
+        label 'agent1'
     }
 
     options {
