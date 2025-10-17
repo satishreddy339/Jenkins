@@ -1,0 +1,257 @@
+pipeline {
+    agent {
+        label '${TARGET_NODE}'
+    }
+
+    options {
+        timeout (time: 30, unit: 'MINUTES')
+        retry (2)
+        timestamps()
+    }
+    
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['install', 'uninstall', 'restart', 'status'],
+            description: 'Select action to perform on Nginx'
+        )
+        
+        choice(
+            name: 'OS_TYPE',
+            choices: ['rhel', 'ubuntu', 'debian'],
+            description: 'Select your operating system type'
+        )
+        
+        booleanParam(
+            name: 'AUTO_START',
+            defaultValue: true,
+            description: 'Enable Nginx to start on boot?'
+        )
+
+        choice(
+            name: 'TARGET_NODE',
+            choices: ['agent', 'agent1'],
+            description: 'Select target node to run on'
+        )
+    }
+    
+    options {
+        timestamps()
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+    
+    stages {
+        stage('Display Parameters') {
+            steps {
+                script {
+                    echo "========== Build Parameters =========="
+                    echo "Action: ${params.ACTION}"
+                    echo "OS Type: ${params.OS_TYPE}"
+                    echo "Auto Start: ${params.AUTO_START}"
+                    echo "Nginx Port: ${params.NGINX_PORT}"
+                    echo "Target Node: ${params.TARGET_NODE}"
+                    echo "Custom Config: ${params.CUSTOM_CONFIG ? 'Provided' : 'Not provided'}"
+                    echo "======================================"
+                }
+            }
+        }
+        
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    // Validate port number
+                    def port = params.NGINX_PORT.toInteger()
+                    if (port < 1 || port > 65535) {
+                        error("Invalid port number: ${port}. Must be between 1 and 65535")
+                    }
+                    echo "✓ Port validation passed: ${port}"
+                }
+            }
+        }
+        
+        stage('Install Nginx') {
+            when {
+                expression { params.ACTION == 'install' }
+            }
+            steps {
+                script {
+                    echo "Installing Nginx on ${params.OS_TYPE}..."
+                    
+                    if (params.OS_TYPE == 'rhel') {
+                        sh '''
+                            echo "Updating package list..."
+                            sudo yum update -y
+                            
+                            echo "Installing Nginx..."
+                            sudo yum install -y nginx
+                            
+                            echo "Nginx installed successfully"
+                            nginx -v
+                        '''
+                    } else if (params.OS_TYPE == 'ubuntu' || params.OS_TYPE == 'debian') {
+                        sh '''
+                            echo "Updating package list..."
+                            sudo apt-get update -y
+                            
+                            echo "Installing Nginx..."
+                            sudo apt-get install -y nginx
+                            
+                            echo "Nginx installed successfully"
+                            nginx -v
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Start Nginx') {
+            when {
+                expression { params.ACTION == 'install' }
+            }
+            steps {
+                script {
+                    echo "Starting Nginx service..."
+                    sh '''
+                        sudo systemctl start nginx
+                        echo "Nginx started successfully"
+                    '''
+                    
+                    if (params.AUTO_START) {
+                        echo "Enabling Nginx to start on boot..."
+                        sh '''
+                            sudo systemctl enable nginx
+                            echo "Nginx enabled for auto-start"
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Uninstall Nginx') {
+            when {
+                expression { params.ACTION == 'uninstall' }
+            }
+            steps {
+                script {
+                    echo "Uninstalling Nginx from ${params.OS_TYPE}..."
+                    
+                    // Stop service first
+                    sh '''
+                        echo "Stopping Nginx service..."
+                        sudo systemctl stop nginx || true
+                        sudo systemctl disable nginx || true
+                    '''
+                    
+                    if (params.OS_TYPE == 'rhel') {
+                        sh '''
+                            echo "Removing Nginx..."
+                            sudo yum remove -y nginx
+                            sudo yum autoremove -y
+                            echo "Nginx uninstalled successfully"
+                        '''
+                    } else if (params.OS_TYPE == 'ubuntu' || params.OS_TYPE == 'debian') {
+                        sh '''
+                            echo "Removing Nginx..."
+                            sudo apt-get remove -y nginx nginx-common
+                            sudo apt-get purge -y nginx nginx-common
+                            sudo apt-get autoremove -y
+                            echo "Nginx uninstalled successfully"
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Restart Nginx') {
+            when {
+                expression { params.ACTION == 'restart' }
+            }
+            steps {
+                echo "Restarting Nginx service..."
+                sh '''
+                    sudo systemctl restart nginx
+                    echo "Nginx restarted successfully"
+                    sudo systemctl status nginx --no-pager
+                '''
+            }
+        }
+        
+        stage('Check Status') {
+            when {
+                expression { params.ACTION == 'status' }
+            }
+            steps {
+                echo "Checking Nginx status..."
+                sh '''
+                    echo "===== Nginx Service Status ====="
+                    sudo systemctl status nginx --no-pager
+                    
+                    echo ""
+                    echo "===== Nginx Version ====="
+                    nginx -v
+                    
+                    echo ""
+                    echo "===== Listening Ports ====="
+                    sudo netstat -tlnp | grep nginx || sudo ss -tlnp | grep nginx
+                    
+                    echo ""
+                    echo "===== Nginx Process ====="
+                    ps aux | grep nginx | grep -v grep
+                '''
+            }
+        }
+        
+        stage('Verify Installation') {
+            when {
+                expression { params.ACTION == 'install' }
+            }
+            steps {
+                script {
+                    echo "Verifying Nginx installation..."
+                    sh '''
+                        echo "===== Service Status ====="
+                        sudo systemctl status nginx --no-pager
+                        
+                        echo ""
+                        echo "===== Testing HTTP Response ====="
+                        curl -I http://localhost:${NGINX_PORT} || echo "Warning: Could not connect to Nginx"
+                        
+                        echo ""
+                        echo "===== Nginx is listening on ====="
+                        sudo netstat -tlnp | grep nginx || sudo ss -tlnp | grep nginx
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            script {
+                def message = ""
+                switch(params.ACTION) {
+                    case 'install':
+                        message = "✅ Nginx installed successfully on ${params.OS_TYPE}!"
+                        break
+                    case 'uninstall':
+                        message = "✅ Nginx uninstalled successfully!"
+                        break
+                    case 'restart':
+                        message = "✅ Nginx restarted successfully!"
+                        break
+                    case 'status':
+                        message = "✅ Nginx status check completed!"
+                        break
+                }
+                echo message
+            }
+        }
+        failure {
+            echo "❌ Pipeline failed! Check the console output for details."
+        }
+        always {
+            echo "Pipeline execution completed at ${new Date()}"
+        }
+    }
+}
